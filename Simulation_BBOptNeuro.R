@@ -11,7 +11,7 @@
 # we HIGHLY recommend the code in the for-loop to be parallelized 
 # we used the function "foreach" from the parallel/foreach packages in R
 
-source("Functions_BBOptNeuro.R")
+source("functions_BBOptNeuro.R")
 
 # 1-D simulation -- The 1-D simulations do not take too long to complete#
 par.values <- 1:100
