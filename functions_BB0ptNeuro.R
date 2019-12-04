@@ -3,9 +3,9 @@
 # By Adam Kaplan and Thomas Murray (2019)
 # University of Minnesota, Twin Cities 
 
-install.pacakges("emdbook")
-install.pacakges("INLA")
-install.pacakges("BayesLogit")
+install.packages("emdbook")
+install.packages("INLA")
+install.packages("BayesLogit")
 
 require(emdbook)
 require(INLA)
