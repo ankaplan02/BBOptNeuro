@@ -33,8 +33,8 @@ onetrial <- onesim(par.values, true.alpha, b.size=8, b.retain=2,
 
 #J = 10; K=11; x1.values = 1:J; x2.values = 1:K
 
-#truealpha <- sample2DGaussUni(J, K, c(2,2), matrix(c(2.5, -.5, -.5, 2.5), nrow = 2, ncol = 2, byrow = T))
-#truealpha <- truealpha - mean(truealpha)
+#true.alpha <- sample2DGaussUni(J, K, c(2,2), matrix(c(2.5, -.5, -.5, 2.5), nrow = 2, ncol = 2, byrow = T))
+#true.alpha <- true.alpha - mean(true.alpha)
 
 #png("2DUnimodalNeutrality.png", width = 650, height = 200)
 #  contour(x=1:K, y=1:J, z=truealpha,xlab="Frequency",ylab="Pulsewidth",
