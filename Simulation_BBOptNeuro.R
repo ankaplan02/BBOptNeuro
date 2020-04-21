@@ -17,6 +17,8 @@ source("functions_BBOptNeuro.R")
 par.values <- 1:100
 true.alpha <- pref.funcval(par.values, cores = 1, mus = c(.4), vars = c(.03), p = 1) # simulate 1-D true preference surface
 # for 100 configurations
+# specify a desired convergence interval 
+mu = 0.5
 
 # 1-D surface used in the article
 png("TrueAlphaPriorUnimod.png")
