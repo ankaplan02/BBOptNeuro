@@ -6,4 +6,4 @@ The file "functions_BBOptNeuro.R" contains R functions that conduct 1-D and 2-D 
 
 **Update 4/20/2020**
 
-We have accelerated computation time by using the package *mvnfast* and also have supplied new simulation functions to run simulations with user specified calibration convergence interval values (namely, $mu$). The simulation code will be updated to incorporate these changes. 
+We have accelerated computation time by using the package *mvnfast* and also have supplied new simulation functions to run simulations with user specified calibration convergence interval values. The simulation code will be updated to incorporate these changes. 
