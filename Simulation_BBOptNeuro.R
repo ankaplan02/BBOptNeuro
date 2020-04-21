@@ -4,7 +4,7 @@
 
 # If device calibration over a 1-D parameter space is desired then leave code as is
 # If device calibration over a 2-D parameter space is desired then 
-# comment out all 1-D related calls (truealphas, onesim, and par.values)
+# comment out all 1-D related calls (truealphas, onesim_mu, and par.values)
 # and then uncomment the lines with 2-D function calls and objects
 
 # WARNING: One 2-D year-long calibration simulation takes about an hour, if J = 10 and K=11, 
@@ -27,9 +27,9 @@ dev.off()
 
 # One Simulation of a Year Long Trial using a batch size of 8 with qEI as the batch acquisition strategy #
 set.seed(1000)
-onetrial <- onesim(par.values, true.alpha, b.size=8, b.retain=2,
+onetrial <- onesim_mu(par.values, true.alpha, b.size=8, b.retain=2,
                    days = 30, Qtype = 1, lambda = 0.00001,
-                   type = "qEI", sampling = "None")
+                   type = "qEI", sampling = "None", mu)
 
 #2-D Simulation, IMPORTANT: comment out all 1-D parameters specified, and the 1-D sim code
 
@@ -44,8 +44,8 @@ onetrial <- onesim(par.values, true.alpha, b.size=8, b.retain=2,
 #          nlevels = 25)
 #dev.off()
 
-#onetrial <- onesim2D(x1.values = x1.values, x2.values = x2.values, true.alpha, b.size = 8,
-#b.retain = 2, days = 30, model.type = 1, type = "qEI", sampling = "None")
+#onetrial <- onesim2D_mu(x1.values = x1.values, x2.values = x2.values, true.alpha, b.size = 8,
+#b.retain = 2, days = 30, model.type = 1, type = "qEI", sampling = "None", mu)
 
 
 # Matrix of simulation metrics used in the article 
@@ -82,7 +82,7 @@ onetrial$SimMeasures[min(which(onetrial$SuperiorMat > .8)),]
 ###########################################################################
 
 # Grid of Preference Neutrality and Calibration Convergence values
-p.cuts <- seq(0, .2, by = .005); s.cuts <- seq(.6, 1, by= .005)
+p.cuts <- seq(0, .2, by = .005); s.cuts <- seq(.6, 1, by= .005); mu = 0.5
 
 times <- 100
 
@@ -90,9 +90,9 @@ output <- list()
 for(i in 1:times){
   
   set.seed(i)
-  onetrial <- onesim(par.values = 1:100, true.alpha = true.alpha,
+  onetrial <- onesim_mu(par.values = 1:100, true.alpha = true.alpha,
                      b.size = 8, b.retain = 2, days = 30, Qtype = 1, lambda = 0.0001,
-                     type = "qEI", sampling = "None")
+                     type = "qEI", sampling = "None", mu=mu)
   
   # If 2-D is desired, comment out the onetrial line above #
   #onetrial <- onesim2D(x1.values = x1.values, x2.values = x2.values, true.alpha, b.size = 8,
