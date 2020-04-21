@@ -5,12 +5,14 @@
 
 #Download these prior #
 #install.packages("emdbook")
-#install.packages("INLA")
+#install.packages("mvnfast") # <- Updated in March-April 2020 to speed up sampling 
 #install.packages("BayesLogit")
+#install.packages("tidyr")
 
 require(emdbook)
-require(INLA)
 library(BayesLogit)
+require(mvnfast)
+require(tidyr)
 ############################################################################
 
 ###Function to generate a random ordering of the 8 parameter values within each month
@@ -211,10 +213,13 @@ btgmrf = function(par.values, curr.data,nsamps=4000,warmup=200, Qtype = 1, hyp =
   # Scaling down the prior distribution for alpha by scaling the prior density for tau, by 
   # restricting the probability of the range of the alphas being less than 1 = 5%
   # more information provided in the paper. 
-  
-  samps = inla.qsample(n=10000,Q=Q,mu=rep(0,p),constr=list(A = matrix(rep(1, p), 1, p), e = 0)) #sample alpha with constraint
-  numrang <- apply(samps, 2, function(x) max(x) - min(x)); rm(samps)
-  x <- quantile(numrang, probs = .05)
+  priorQsolve <- solve(Q)
+  samps <- mvnfast::rmvn(10000, mu = rep(0,p), sigma = priorQsolve)
+  samps2 <- t(sapply(1:10000, function(x) samps[x,] - rowSums(priorQsolve)*sum(samps[x,])/sum(priorQsolve)))
+  numrang <- apply(samps2, 1, function(x) max(x) - min(x)); rm(samps); rm(samps2)
+   rm(priorQsolve)
+   x <- quantile(numrang, probs = .05)
+ 
   
   # Storage object
   alpha.samps = matrix(NA,nrow=nsamps,ncol=p)
@@ -361,8 +366,9 @@ get.quality <- function(true.alpha, curr.data, estim.alpha, time, days){
 # if you chose "None" for type, then specify "Thompson" for sampling 
 # information about these types of Batch Acquisition strategies can be found
 # in the article associated with this code. 
+# mu: convergence interval, default is 0.5
 
-onesim <- function(par.values, true.alpha, b.size, b.retain, days, Qtype=1, lambda = 0.0001, type, sampling){
+onesim_mu <- function(par.values, true.alpha, b.size, b.retain, days, Qtype=1, lambda = 0.0001, type, sampling, mu = .5){
   time = 12; nsamps = 2000; burns = 500
   curr.data = NULL; BrierTraject <- matrix(0, ncol = 2, nrow = time);
   month = 1; collects = matrix(NA, ncol = 5, nrow = time)
@@ -388,11 +394,12 @@ onesim <- function(par.values, true.alpha, b.size, b.retain, days, Qtype=1, lamb
     burden <- get.quality(true.alpha, curr.data, fit$alpha.samps, month, days)
     collects[month,] <- c(estbest, month, RMSE, offness, burden) 
     futmat[month] <- Futility(fit$alpha.samps)
-    supmat[month] <- Superiority(fit$alpha.samps)
+    supmat[month] <- Superiority_Mu(fit$alpha.samps, mu = mu)
   }
   return(list("SimMeasures" = collects,"BrierTraject" = BrierTraject,
               "FutilityMat" = futmat, "SuperiorMat" = supmat))
 }
+
 
 # One simulation of a year long trial in the 2-D context #
 #x1.values: vector of indices for levels of the first parameter of the device (i.e. c(1:10))
@@ -414,8 +421,8 @@ onesim <- function(par.values, true.alpha, b.size, b.retain, days, Qtype=1, lamb
 # if you chose "None" for type, then specify "Thompson" for sampling 
 # information about these types of Batch Acquisition strategies can be found
 # in the article associated with this code. 
-
-onesim2D <- function(x1.values, x2.values, true.alpha, b.size, b.retain, days, model.type = 1, type, sampling){
+# mu: convergence interval, default is 0.5
+onesim2D_mu <- function(x1.values, x2.values, true.alpha, b.size, b.retain, days, model.type = 1, type, sampling, mu = 0.5){
   nsamps = 2000; burns = 500
   curr.data = c(); flag = 0; month = 1; time = 12; collects <- matrix(NA, nrow = time, ncol = 5)
   BrierTraject <- matrix(0, ncol = 2, nrow = time);
@@ -436,7 +443,7 @@ onesim2D <- function(x1.values, x2.values, true.alpha, b.size, b.retain, days, m
     obs.points <- unique(curr.data[,c(2,3)])
     #print(sprintf("Commencing bi-CAR model for Month %s", month))
     if(model.type == 1){
-      fit = biCAR2D(curr.data, x1.values, x2.values, nsamps = 2000, warmup = 500)}
+      fit = biCAR2D(curr.data, x1.values, x2.values, nsamps, warmup = burns)}
     if(model.type == 2){
       #sprintf(print("Initiating Additive 2-D Model"))
       fit = fit.additive2D.model(dat = curr.data, x1.values, x2.values,nsamps=2000,warmup=burns)
@@ -448,7 +455,7 @@ onesim2D <- function(x1.values, x2.values, true.alpha, b.size, b.retain, days, m
     burden <- get.quality(true.alpha, curr.data, fit$alpha.samps, month, days)
     collects[month,] <- c(estbest, month, RMSE, offness, burden) 
     futmat[month] <- Futility(fit$alpha.samps); 
-    supmat[month] <- Superiority(fit$alpha.samps)
+    supmat[month] <- Superiority_Mu(fit$alpha.samps, mu=mu)
   }
   #print(sprintf("Simulation %s Done", i))
   #}
@@ -456,6 +463,17 @@ onesim2D <- function(x1.values, x2.values, true.alpha, b.size, b.retain, days, m
               "FutilityMat" = futmat, "SuperiorMat" = supmat))
 }
 
+# Function for cutting the trial early # ask tom about incorporating a month element #
+#Updated Futility and Superiority rule based on alphas only and 
+# clinically relevant difference of mu... August 23rd 2019
+Superiority_Mu <- function(alphasamps, mu){
+  alphastar <- which.max(colMeans(alphasamps))
+  dimsd <- dim(alphasamps); long <- dimsd[1]
+  Sup.Counts <- sapply(1:long, function(x){prob <- (max(alphasamps[x,]) - alphasamps[x,alphastar] < mu)})
+  outt <- mean(Sup.Counts)
+  return(outt)
+}                     
+                     
 #Function to fit the 2NCAR model for binary outcome#
 #dat: curr.dat; a matrix with the a $y column, the binary indicators of patient reported preference
 # and the next two columns labeled $x1.prev and $x2.prev, where these correspond to the 
@@ -502,30 +520,29 @@ biCAR2D = function(dat, x1.values, x2.values, nsamps=2000,warmup=500,
   diag(Q0) = diag(Q0) +  1e-10 #Prior Precision sans tau
   accept <- 0
   
-  samps = inla.qsample(n=10000,Q=Q0,mu=rep(0,J*K),constr=list(A = matrix(rep(1, J*K), 1, J*K), e = 0)) #sample alpha with constraint
-  numrang <- apply(samps, 2, function(x) max(x) - min(x)); rm(samps)
+  priorQsolve <- solve(Q0) 
+  samps <- mvnfast::rmvn(10000, mu = rep(0,p), sigma = priorQsolve)
+  samps <- t(sapply(1:10000, function(x) samps[x,] - rowSums(priorQsolve)*sum(samps[x,])/sum(priorQsolve)))
+  numrang <- apply(samps, 1, function(x) max(x) - min(x)); rm(samps)
   x <- quantile(numrang, probs = .05)
   
   for(samp in 1:(nsamps+warmup)){
-    # Sample alpha
     omega = rpg.devroye(n,1,X%*%alpha.vec) # update auxillary parameters
     Q0 = 2*phi*(B)+2*(1-phi)*(A) 
     diag(Q0) = diag(Q0) + + 1e-10 #Prior Precision sans tau
     Q = t(X)%*%(X*omega)+tau*Q0;
-    Q = inla.as.sparse(Q)
-    #m = inla.qsolve(Q,diag(J*K),method="solve")%*%(t(X)%*%kappa) # Posterior Precision and Mean
-    m = inla.qsolve(Q,diag(J*K),method="solve")%*%(crossprod(X,kappa)) # Posterior Precision and Mean
-    alpha.vec = inla.qsample(n=1,Q=Q,mu=m,constr=list(A = matrix(rep(1, J*K), 1, J*K), e = 0)) #sample alpha with constraint
-    
-    #wrapped Q0 multiplication to speed things up, maybe... 
+    Q2 <- chol2inv(chol(Q)) #covariance 
+    m = Q2%*%(crossprod(X,kappa)) # Posterior Precision and Mean
+    alpha.vec <- as.vector(mvnfast::rmvn(n=1, mu = m, sigma = Q2))
+    # sum to zero constraint #
+    alpha.vec <- alpha.vec - rowSums(Q2)*(sum(alpha.vec)/sum(Q2))
+      
     tau = rgamma(1, shape = (a + p/2-1), rate = c((t(alpha.vec)%*%(Q0%*%alpha.vec))/2 + b/x^2)) #if we use iCAR modeling scheme
     
     rej.stuff <- Reject.Psi(phi, A, B, J, K, alpha.vec, tau); phi <- rej.stuff[[1]]; accept <- accept + rej.stuff[[2]]
     
     
     if(samp>warmup){
-      #if(samp%%100 ==0 ){print(sprintf("Sample Collected %d", samp-warmup))}
-      #if((samp-warmup) %in% quantile(1:nsamps,1:9/10,type=1)) print(paste("Posterior Sampling ",round(100*(samp-warmup)/nsamps),"% Complete",sep=""))
       alpha.samps[samp-warmup,] = alpha.vec
       tau.samps[samp-warmup] = tau
       phi.samps[samp-warmup] = phi
@@ -574,14 +591,21 @@ fit.additive2D.model = function(dat,x1.values,x2.values,nsamps=2000,warmup=500){
   QK[cbind(2:K,2:K-1)] = QK[cbind(2:K-1,2:K)] = -1
   
   # Find prior distribution for tau for individual additive components 
-  samps = inla.qsample(n=10000,Q=QK,mu=rep(0,K),constr=list(A = matrix(rep(1, K), 1, K), e = 0)) #sample alpha with constraint
-  numrang <- apply(samps, 2, function(x) max(x) - min(x)); rm(samps)
+  # Find prior distribution for tau for individual additive components 
+  priorQsolve <- chol2inv(chol(QK))
+  samps <- mvnfast::rmvn(10000, mu = rep(0,K), sigma = priorQsolve)
+  samps <- t(sapply(1:10000, function(x) samps[x,] - rowSums(priorQsolve)*sum(samps[x,])/sum(priorQsolve)))
+  numrang <- apply(samps, 1, function(x) max(x) - min(x)); rm(samps)
   xK <- quantile(numrang, probs = .05)
   
-  samps = inla.qsample(n=10000,Q=QJ,mu=rep(0,J),constr=list(A = matrix(rep(1, J), 1, J), e = 0)) #sample alpha with constraint
-  numrang <- apply(samps, 2, function(x) max(x) - min(x)); rm(samps)
+  priorQsolve <- chol2inv(chol(QJ))
+  samps <- mvnfast::rmvn(10000, mu = rep(0,J), sigma = priorQsolve)
+  samps <- t(sapply(1:10000, function(x) samps[x,] - rowSums(priorQsolve)*sum(samps[x,])/sum(priorQsolve)))
+  numrang <- apply(samps, 1, function(x) max(x) - min(x)); rm(samps)
   xJ <- quantile(numrang, probs = .05)
   
+  rm(priorQsolve)
+                   
   # Storage objects
   gamma.samps = matrix(NA,nrow=nsamps,ncol=J)
   lambda.samps = matrix(NA,nrow=nsamps,ncol=K)
@@ -652,16 +676,6 @@ TwoDto1D <- function(TwoDat, x1.values, x2.values){
   refs <- referenceLattice(length(x1.values),length(x2.values))
   setts <- sapply(1:nrow(TwoDat), function(x) refs[TwoDat[x,1], TwoDat[x,2]])
   return(setts)
-}
-
-# Function for cutting the trial early for the
-# Calibration Convergence Rule with margin of convergence of 0.5
-Superiority <- function(alphasamps){
-  alphastar <- which.max(colMeans(alphasamps))
-  dimsd <- dim(alphasamps); long <- dimsd[1]
-  Sup.Counts <- sapply(1:long, function(x){prob <- (max(alphasamps[x,]) - alphasamps[x,alphastar] < .5)})
-  outt <- mean(Sup.Counts)
-  return(outt)
 }
 
 #Function for cutting trial early for the
